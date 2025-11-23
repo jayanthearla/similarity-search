@@ -1,0 +1,14 @@
+{
+  "num_images": 6,
+  "feature_dim": 768,
+  "n_regions": 1,
+  "nprobe": 1,
+  "image_paths": [
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\elephant.jpg",
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\lion.jpg",
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\lion2.jpg",
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\tiger.jpeg",
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\tiger2.jpg",
+    "E:\\Murphy\\R&D\\1_image_dataset\\dataset_2\\zebra1.jpeg"
+  ]
+}

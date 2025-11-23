@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Retrieval System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .tab-active {
+            @apply border-b-2 border-blue-500 text-blue-600;
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div x-data="app()" x-cloak class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Image Retrieval System</h1>
+            <p class="text-gray-600">Feature Extraction & Similarity Search using ViT-B/16 & FAISS</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-white rounded-lg shadow-md mb-6">
+            <div class="border-b border-gray-200">
+                <nav class="flex -mb-px">
+                    <button 
+                        @click="activeTab = 'extract'"
+                        :class="activeTab === 'extract' ? 'tab-active' : 'text-gray-500 hover:text-gray-700'"
+                        class="px-6 py-4 font-medium text-sm focus:outline-none transition-colors"
+                    >
+                        Feature Extraction
+                    </button>
+                    <button 
+                        @click="activeTab = 'search'"
+                        :class="activeTab === 'search' ? 'tab-active' : 'text-gray-500 hover:text-gray-700'"
+                        class="px-6 py-4 font-medium text-sm focus:outline-none transition-colors"
+                    >
+                        Similar Images
+                    </button>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Tab 1: Feature Extraction -->
+        <div x-show="activeTab === 'extract'" x-transition class="fade-in">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-6">Extract Features from Directory</h2>
+                
+                <!-- Directory Input -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Dataset Directory Path
+                    </label>
+                    <div class="flex gap-2">
+                        <input 
+                            type="text"
+                            x-model="directoryPath"
+                            placeholder="C:\path\to\your\images"
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                        <button
+                            @click="browseDirectory()"
+                            class="px-6 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
+                        >
+                            Browse Folder
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Extract Button -->
+                <button
+                    @click="extractFeatures()"
+                    :disabled="extracting || !directoryPath"
+                    :class="extracting || !directoryPath ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-600'"
+                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-medium transition-colors mb-6"
+                >
+                    <span x-show="!extracting">Extract Features</span>
+                    <span x-show="extracting" class="flex items-center justify-center gap-2">
+                        <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Extracting...
+                    </span>
+                </button>
+
+                <!-- Progress Bar -->
+                <div x-show="extracting" class="mb-6">
+                    <div class="flex justify-between text-sm text-gray-600 mb-2">
+                        <span x-text="progressText"></span>
+                        <span x-text="extractionProgress + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                            class="bg-blue-500 h-3 rounded-full transition-all duration-300"
+                            :style="'width: ' + extractionProgress + '%'"
+                        ></div>
+                    </div>
+                </div>
+
+                <!-- Stats Card -->
+                <div x-show="stats.num_indexed_images > 0" class="mt-6 p-4 bg-gray-50 rounded-lg fade-in">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Index Statistics</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <p class="text-sm text-gray-600">Images Indexed</p>
+                            <p class="text-2xl font-bold text-blue-600" x-text="stats.num_indexed_images"></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Feature Dimension</p>
+                            <p class="text-2xl font-bold text-blue-600" x-text="stats.feature_dim"></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">IVF Regions</p>
+                            <p class="text-2xl font-bold text-blue-600" x-text="stats.ivf_region_count"></p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">Probes</p>
+                            <p class="text-2xl font-bold text-blue-600" x-text="stats.probe_count"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Success/Error Messages -->
+                <div x-show="extractionMessage" 
+                     :class="extractionSuccess ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'"
+                     class="mt-4 p-4 border rounded-lg fade-in"
+                     x-text="extractionMessage">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Similar Images -->
+        <div x-show="activeTab === 'search'" x-transition class="fade-in">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-6">Find Similar Images</h2>
+                
+                <!-- Query Image Upload -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Query Image
+                    </label>
+                    <div 
+                        @click="$refs.fileInput.click()"
+                        @dragover.prevent
+                        @drop.prevent="handleDrop($event)"
+                        class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                        :class="queryImagePreview ? 'border-blue-400' : ''"
+                    >
+                        <input 
+                            type="file"
+                            x-ref="fileInput"
+                            @change="handleFileSelect($event)"
+                            accept="image/*"
+                            class="hidden"
+                        />
+                        <div x-show="!queryImagePreview">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="mt-2 text-sm text-gray-600">Click to upload or drag and drop</p>
+                        </div>
+                        <div x-show="queryImagePreview" class="fade-in">
+                            <img :src="queryImagePreview" alt="Preview" class="mx-auto max-h-48 rounded-lg shadow-md">
+                            <p class="mt-2 text-sm text-gray-600" x-text="queryImageName"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- K Input -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Top-K Results
+                    </label>
+                    <input 
+                        type="number"
+                        x-model="topK"
+                        min="1"
+                        max="100"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                </div>
+
+                <!-- Search Button -->
+                <button
+                    @click="searchSimilar()"
+                    :disabled="searching || !queryImageFile"
+                    :class="searching || !queryImageFile ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-600'"
+                    class="w-full px-6 py-3 bg-blue-500 text-white rounded-lg font-medium transition-colors mb-6"
+                >
+                    <span x-show="!searching">Find Similar Images</span>
+                    <span x-show="searching" class="flex items-center justify-center gap-2">
+                        <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Searching...
+                    </span>
+                </button>
+
+                <!-- Error Message -->
+                <div x-show="searchMessage" 
+                     class="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg fade-in"
+                     x-text="searchMessage">
+                </div>
+
+                <!-- Results Grid -->
+                <div x-show="searchResults.length > 0" class="fade-in">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">
+                        Results (<span x-text="searchResults.length"></span>)
+                    </h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <template x-for="(result, index) in searchResults" :key="index">
+                            <div 
+                                @click="openImage(result.image_path)"
+                                class="bg-gray-50 rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg transition-shadow group"
+                            >
+                                <div class="aspect-square bg-gray-200 relative overflow-hidden">
+                                    <img 
+                                        :src="'/api/image/' + encodeURIComponent(result.image_path)"
+                                        :alt="result.filename"
+                                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                        @error="$el.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'200\' height=\'200\'%3E%3Crect fill=\'%23ddd\' width=\'200\' height=\'200\'/%3E%3Ctext x=\'50%25\' y=\'50%25\' text-anchor=\'middle\' dy=\'.3em\' fill=\'%23999\'%3EImage%3C/text%3E%3C/svg%3E'"
+                                    />
+                                    <div class="absolute top-2 right-2 bg-blue-500 text-white px-2 py-1 rounded text-xs font-bold">
+                                        #<span x-text="result.rank"></span>
+                                    </div>
+                                </div>
+                                <div class="p-3">
+                                    <p class="text-xs text-gray-500 truncate mb-1" x-text="result.filename"></p>
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm font-semibold text-green-600">
+                                            <span x-text="(result.similarity * 100).toFixed(1)"></span>%
+                                        </span>
+                                        <span class="text-xs text-gray-500">
+                                            dist: <span x-text="result.distance.toFixed(3)"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                activeTab: 'extract',
+                directoryPath: '',
+                extracting: false,
+                extractionProgress: 0,
+                progressText: 'Initializing...',
+                extractionMessage: '',
+                extractionSuccess: false,
+                stats: {
+                    num_indexed_images: 0,
+                    feature_dim: 0,
+                    ivf_region_count: 0,
+                    probe_count: 0
+                },
+                queryImageFile: null,
+                queryImagePreview: null,
+                queryImageName: '',
+                topK: 10,
+                searching: false,
+                searchMessage: '',
+                searchResults: [],
+
+                async init() {
+                    // Load stats on init
+                    await this.loadStats();
+                },
+
+                browseDirectory() {
+                    // Note: Browser security prevents direct folder selection
+                    // User must paste the path manually
+                    alert('Please paste the full directory path in the text box above.\n\nExample: C:\\Users\\YourName\\Pictures\\Dataset');
+                },
+
+                async extractFeatures() {
+                    if (!this.directoryPath) return;
+                    
+                    this.extracting = true;
+                    this.extractionProgress = 0;
+                    this.extractionMessage = '';
+                    this.progressText = 'Starting extraction...';
+
+                    try {
+                        const response = await fetch('/api/extract-features', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                directory_path: this.directoryPath
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        if (!data.success) {
+                            throw new Error(data.error || 'Extraction failed');
+                        }
+
+                        // Poll for progress
+                        const progressInterval = setInterval(async () => {
+                            const progressResponse = await fetch('/api/extraction-progress');
+                            const progressData = await progressResponse.json();
+                            
+                            this.extractionProgress = progressData.progress || 0;
+                            this.progressText = progressData.current_image 
+                                ? `Processing: ${progressData.current_image.split(/[/\\]/).pop()} (${progressData.current_image || 0}/${progressData.total_images || 0})`
+                                : 'Processing...';
+
+                            if (progressData.status === 'completed') {
+                                clearInterval(progressInterval);
+                                this.extracting = false;
+                                this.extractionMessage = `Successfully indexed ${progressData.index_stats?.num_images || 0} images!`;
+                                this.extractionSuccess = true;
+                                await this.loadStats();
+                            } else if (progressData.status === 'error') {
+                                clearInterval(progressInterval);
+                                this.extracting = false;
+                                this.extractionMessage = progressData.error || 'Extraction failed';
+                                this.extractionSuccess = false;
+                            }
+                        }, 1000);
+
+                    } catch (error) {
+                        this.extracting = false;
+                        this.extractionMessage = error.message;
+                        this.extractionSuccess = false;
+                    }
+                },
+
+                async loadStats() {
+                    try {
+                        const response = await fetch('/api/stats');
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            this.stats = data.stats;
+                        }
+                    } catch (error) {
+                        console.error('Failed to load stats:', error);
+                    }
+                },
+
+                handleFileSelect(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        this.queryImageFile = file;
+                        this.queryImageName = file.name;
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            this.queryImagePreview = e.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                },
+
+                handleDrop(event) {
+                    const file = event.dataTransfer.files[0];
+                    if (file && file.type.startsWith('image/')) {
+                        this.queryImageFile = file;
+                        this.queryImageName = file.name;
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            this.queryImagePreview = e.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                },
+
+                async searchSimilar() {
+                    if (!this.queryImageFile) return;
+
+                    this.searching = true;
+                    this.searchMessage = '';
+                    this.searchResults = [];
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('query_image', this.queryImageFile);
+                        formData.append('k', this.topK);
+
+                        const response = await fetch('/api/search', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        const data = await response.json();
+
+                        if (!data.success) {
+                            throw new Error(data.error || 'Search failed');
+                        }
+
+                        this.searchResults = data.results || [];
+                        this.searching = false;
+
+                    } catch (error) {
+                        this.searching = false;
+                        this.searchMessage = error.message;
+                    }
+                },
+
+                openImage(imagePath) {
+                    // Open image in new tab
+                    window.open(`/api/image/${encodeURIComponent(imagePath)}`, '_blank');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
